@@ -28,7 +28,8 @@ public class NYTProfitableQuery {
         long duration = parameters.getLong("duration", 180);
 
         org.apache.flink.configuration.Configuration conf = new org.apache.flink.configuration.Configuration();
-        conf.setString("taskmanager.memory.network.min", "256mb");
+        // Network memory min and max MUST match exactly when running via MiniCluster
+        conf.setString("taskmanager.memory.network.min", "1gb");
         conf.setString("taskmanager.memory.network.max", "1gb");
         conf.setString("taskmanager.memory.network.fraction", "0.2");
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
