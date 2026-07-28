@@ -14,12 +14,12 @@ public class NYTProfitFunction implements
         WindowFunction<
                 NYTEventProjected,
                 NYTProfitReport,
-                Tuple2<Integer, Integer>,
+                Integer,
                 TimeWindow> {
 
     @Override
     public void apply(
-            Tuple2<Integer, Integer> cellId,
+            Integer cellKey,
             TimeWindow window,
             Iterable<NYTEventProjected> values,
             Collector<NYTProfitReport> out) throws Exception {
@@ -41,6 +41,8 @@ public class NYTProfitFunction implements
 
         double res = (new Median()).evaluate(gains);
 
-        out.collect(new NYTProfitReport(window.getEnd(), cellId.f0, cellId.f1, res));
+        int cellWE = cellKey >>> 16;
+        int cellNS = cellKey & 0xFFFF;
+        out.collect(new NYTProfitReport(window.getEnd(), cellWE, cellNS, res));
     }
 }

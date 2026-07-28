@@ -12,11 +12,11 @@ public class NYTEmptyTaxisCounter implements
         WindowFunction<
                 NYTEmptyTaxiReport,
                 NYTEmptyTaxiCountReport,
-                Tuple2<Integer, Integer>, TimeWindow> {
+                Integer, TimeWindow> {
 
     @Override
     public void apply(
-            Tuple2<Integer, Integer> cellId, TimeWindow window,
+            Integer cellKey, TimeWindow window,
             Iterable<NYTEmptyTaxiReport> values,
             Collector<NYTEmptyTaxiCountReport> out) throws Exception {
         // removing duplicates
@@ -34,6 +34,8 @@ public class NYTEmptyTaxisCounter implements
             lastWID = t.windowEnd;
         }
 
-        out.collect(new NYTEmptyTaxiCountReport(window.getEnd(), cellId.f0, cellId.f1, taxis.size()));
+        int cellWE = cellKey >>> 16;
+        int cellNS = cellKey & 0xFFFF;
+        out.collect(new NYTEmptyTaxiCountReport(window.getEnd(), cellWE, cellNS, taxis.size()));
     }
 }

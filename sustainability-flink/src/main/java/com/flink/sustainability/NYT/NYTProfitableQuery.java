@@ -19,14 +19,6 @@ public class NYTProfitableQuery {
     private static final long SLIDING_WINDOW_DURATION_SECONDS = K_WINDOW_DURATION_BASE_SECONDS * 15;
 
     public static void main(String[] args) throws Exception {
-        Configuration conf = new Configuration();
-        // Increase network buffers to support high parallelism on remote machines with many cores
-        conf.setString("taskmanager.memory.network.min", "256m");
-        conf.setString("taskmanager.memory.network.max", "1g");
-        conf.setString("taskmanager.memory.network.fraction", "0.2");
-        
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-
         // Parse command line arguments
         ParameterTool parameters = ParameterTool.fromArgs(args);
         
@@ -34,6 +26,11 @@ public class NYTProfitableQuery {
         int cacheSize = parameters.getInt("cache-size", 100000);
         int throughput = parameters.getInt("throughput", 100000);
         long duration = parameters.getLong("duration", 180);
+
+        org.apache.flink.configuration.Configuration conf = new org.apache.flink.configuration.Configuration();
+        conf.setString("taskmanager.memory.network.min", "256mb");
+        conf.setString("taskmanager.memory.network.max", "256mb");
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
 
         // Incorporate the source operator with parsed arguments
         DataStream<NYTEventCondensed> events = env.addSource(new NYTSourceOperator(
@@ -56,13 +53,7 @@ public class NYTProfitableQuery {
 
         // PROFIT
         DataStream<NYTProfitReport> profit = rides
-            .keyBy(
-                new KeySelector<NYTEventProjected, Tuple2<Integer, Integer>>() {
-                    @Override
-                    public Tuple2<Integer, Integer> getKey(NYTEventProjected value) throws Exception {
-                        return Tuple2.of(value.pickupCellWE, value.pickupCellNS);
-                    }
-                })
+            .keyBy(value -> (value.pickupCellWE << 16) | (value.pickupCellNS & 0xFFFF))
             .timeWindow(
                 Time.of(SLIDING_WINDOW_DURATION_SECONDS, TimeUnit.SECONDS),
                 Time.of(K_WINDOW_DURATION_BASE_SECONDS, TimeUnit.SECONDS)
@@ -73,13 +64,7 @@ public class NYTProfitableQuery {
 
         // EMPTY TAXIS
         DataStream<NYTEmptyTaxiReport> emptyTaxis = rides
-            .keyBy(
-                new KeySelector<NYTEventProjected, String>() {
-                    @Override
-                    public String getKey(NYTEventProjected value) throws Exception {
-                        return value.medallion;
-                    }
-                })
+            .keyBy(value -> value.medallion)
             .timeWindow(
                 Time.of(SLIDING_WINDOW_DURATION_SECONDS, TimeUnit.SECONDS),
                 Time.of(K_WINDOW_DURATION_BASE_SECONDS, TimeUnit.SECONDS)
@@ -90,12 +75,7 @@ public class NYTProfitableQuery {
 
         // EMPTY TAXIS COUNTER
         DataStream<NYTEmptyTaxiCountReport> emptyTaxisCount = emptyTaxis
-            .keyBy(new KeySelector<NYTEmptyTaxiReport, Tuple2<Integer, Integer>>() {
-                @Override
-                public Tuple2<Integer, Integer> getKey(NYTEmptyTaxiReport value) throws Exception {
-                    return Tuple2.of(value.dropOffCellWE, value.dropOffCellNS);
-                }
-            })
+            .keyBy(value -> (value.dropOffCellWE << 16) | (value.dropOffCellNS & 0xFFFF))
             .timeWindow(Time.of(K_WINDOW_DURATION_BASE_SECONDS, TimeUnit.SECONDS))
             .apply(new NYTEmptyTaxisCounter())
             .assignTimestampsAndWatermarks(WatermarkStrategy.<NYTEmptyTaxiCountReport>forMonotonousTimestamps()

@@ -21,21 +21,46 @@ public class NYTEventCondensed {
     public static NYTEventCondensed parseLine(String line) {
         String[] tokens = line.split(",");
 
-        if (tokens.length < 9) {
+        if (tokens.length < 17) {
             return null;
         }
 
         try {
+            double puLat = Double.parseDouble(tokens[7]);
+            double puLong = Double.parseDouble(tokens[6]);
+            double doLat = Double.parseDouble(tokens[9]);
+            double doLong = Double.parseDouble(tokens[8]);
+
+            if (!AreaMapper.isValidCoord(puLat, puLong) || !AreaMapper.isValidCoord(doLat, doLong)) {
+                return null;
+            }
+
+            int pickupCellWE = AreaMapper.getWE(puLong);
+            int pickupCellNS = AreaMapper.getNS(puLat);
+            int dropOffCellWE = AreaMapper.getWE(doLong);
+            int dropOffCellNS = AreaMapper.getNS(doLat);
+
+            if (pickupCellWE > AreaMapper.MAX_CELL || pickupCellWE < AreaMapper.MIN_CELL ||
+                pickupCellNS > AreaMapper.MAX_CELL || pickupCellNS < AreaMapper.MIN_CELL ||
+                dropOffCellWE > AreaMapper.MAX_CELL || dropOffCellWE < AreaMapper.MIN_CELL ||
+                dropOffCellNS > AreaMapper.MAX_CELL || dropOffCellNS < AreaMapper.MIN_CELL) {
+                return null;
+            }
+
             NYTEventCondensed event = new NYTEventCondensed();
             event.medallion = tokens[0];
-            event.pickupDatetime = dateFmt.parse(tokens[1]);
-            event.dropOffDatetime = dateFmt.parse(tokens[2]);
-            event.pickupCellWE = Integer.parseInt(tokens[3]);
-            event.pickupCellNS = Integer.parseInt(tokens[4]);
-            event.dropOffCellWE = Integer.parseInt(tokens[5]);
-            event.dropOffCellNS = Integer.parseInt(tokens[6]);
-            event.fareAmount = Double.parseDouble(tokens[7]);
-            event.tipAmount = Double.parseDouble(tokens[8]);
+            
+            synchronized (dateFmt) {
+                event.pickupDatetime = dateFmt.parse(tokens[2]);
+                event.dropOffDatetime = dateFmt.parse(tokens[3]);
+            }
+            
+            event.pickupCellWE = pickupCellWE;
+            event.pickupCellNS = pickupCellNS;
+            event.dropOffCellWE = dropOffCellWE;
+            event.dropOffCellNS = dropOffCellNS;
+            event.fareAmount = Double.parseDouble(tokens[11]);
+            event.tipAmount = Double.parseDouble(tokens[14]);
             return event;
         } catch (ParseException | NumberFormatException e) {
             return null;

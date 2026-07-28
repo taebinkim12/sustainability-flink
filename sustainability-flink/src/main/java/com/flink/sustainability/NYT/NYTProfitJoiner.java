@@ -29,17 +29,17 @@ public class NYTProfitJoiner implements
         out.collect(new NYTProfitabilityReport(first.windowEnd, first.cellIdWE, first.cellIdNS, profitability));
     }
 
-    public static class ProfitJoinKey implements KeySelector<NYTProfitReport, Tuple2<Integer, Integer>> {
+    public static class ProfitJoinKey implements KeySelector<NYTProfitReport, Integer> {
         @Override
-        public Tuple2<Integer, Integer> getKey(NYTProfitReport value) throws Exception {
-            return Tuple2.of(value.cellIdWE, value.cellIdNS);
+        public Integer getKey(NYTProfitReport value) throws Exception {
+            return (value.cellIdWE << 16) | (value.cellIdNS & 0xFFFF);
         }
     }
 
-    public static class EmptyTaxisJoinKey implements KeySelector<NYTEmptyTaxiCountReport, Tuple2<Integer, Integer>> {
+    public static class EmptyTaxisJoinKey implements KeySelector<NYTEmptyTaxiCountReport, Integer> {
         @Override
-        public Tuple2<Integer, Integer> getKey(NYTEmptyTaxiCountReport value) throws Exception {
-            return Tuple2.of(value.cellIdWE, value.cellIdNS);
+        public Integer getKey(NYTEmptyTaxiCountReport value) throws Exception {
+            return (value.cellIdWE << 16) | (value.cellIdNS & 0xFFFF);
         }
     }
 }

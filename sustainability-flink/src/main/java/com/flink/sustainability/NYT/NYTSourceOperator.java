@@ -51,6 +51,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
                 lineIndex++;
             }
         }
+        System.out.println("Subtask " + subtaskIdx + " done file reading. Loaded " + eventCache.size() + " events.");
     }
 
     @Override
@@ -78,7 +79,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
                 count++;
             } else {
                 // Yield to prevent 100% CPU busy-waiting
-                Thread.sleep(1);
+                java.util.concurrent.locks.LockSupport.parkNanos(10000L);
             }
         }
     }

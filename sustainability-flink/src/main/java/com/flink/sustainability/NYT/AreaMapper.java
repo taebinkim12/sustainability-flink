@@ -60,6 +60,18 @@ public class AreaMapper {
             longitude < O_LONG);
     }
 
+    public static int getWE(double longitude) {
+        return (int) Math.ceil(toKm(O_LONG, longitude) / CELL_WIDTH);
+    }
+
+    public static int getNS(double latitude) {
+        return (int) Math.ceil(toKm(O_LAT, latitude) / CELL_WIDTH);
+    }
+
+    public static boolean isValidCoord(double latitude, double longitude) {
+        return checkCoord(latitude, longitude);
+    }
+
     private static double toDeg(double km) {
         return Math.toDegrees(km / EARTH_RADIUS);
     }
@@ -96,6 +108,11 @@ public class AreaMapper {
         @Override
         public String getMessage() {
             return String.valueOf(latitude) + ", " + String.valueOf(longitude) + ": out of bounds";
+        }
+
+        @Override
+        public synchronized Throwable fillInStackTrace() {
+            return this;
         }
     }
 }
