@@ -45,17 +45,25 @@ if [ -z "$JAR_FILE" ]; then
     exit 1
 fi
 
-CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
-
-# Run the job via java directly
-java \
-    --add-opens=java.base/java.lang=ALL-UNNAMED \
-    --add-opens=java.base/java.util=ALL-UNNAMED \
-    --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
-    --add-opens=java.base/java.io=ALL-UNNAMED \
-    --add-opens=java.base/java.nio=ALL-UNNAMED \
-    -cp "$CLASSPATH" com.flink.sustainability.NYT.NYTProfitableQuery \
-    --input-file "$INPUT_FILE" \
-    --cache-size "$CACHE_SIZE" \
-    --throughput "$PER_NODE_THROUGHPUT" \
-    --duration "$DURATION"
+if [ "$EXECUTION_MODE" = "distributed" ]; then
+    echo "Submitting job to Flink cluster..."
+    flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \
+        --input-file "$INPUT_FILE" \
+        --cache-size "$CACHE_SIZE" \
+        --throughput "$PER_NODE_THROUGHPUT" \
+        --duration "$DURATION"
+else
+    echo "Running job locally via embedded MiniCluster..."
+    CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
+    java \
+        --add-opens=java.base/java.lang=ALL-UNNAMED \
+        --add-opens=java.base/java.util=ALL-UNNAMED \
+        --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+        --add-opens=java.base/java.io=ALL-UNNAMED \
+        --add-opens=java.base/java.nio=ALL-UNNAMED \
+        -cp "$CLASSPATH" com.flink.sustainability.NYT.NYTProfitableQuery \
+        --input-file "$INPUT_FILE" \
+        --cache-size "$CACHE_SIZE" \
+        --throughput "$PER_NODE_THROUGHPUT" \
+        --duration "$DURATION"
+fi

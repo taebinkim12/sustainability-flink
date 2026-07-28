@@ -4,6 +4,7 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
@@ -18,7 +19,13 @@ public class NYTProfitableQuery {
     private static final long SLIDING_WINDOW_DURATION_SECONDS = K_WINDOW_DURATION_BASE_SECONDS * 15;
 
     public static void main(String[] args) throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        Configuration conf = new Configuration();
+        // Increase network buffers to support high parallelism on remote machines with many cores
+        conf.setString("taskmanager.memory.network.min", "256m");
+        conf.setString("taskmanager.memory.network.max", "1g");
+        conf.setString("taskmanager.memory.network.fraction", "0.2");
+        
+        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
 
         // Parse command line arguments
         ParameterTool parameters = ParameterTool.fromArgs(args);
