@@ -30,14 +30,14 @@ if [ "$EXECUTION_MODE" = "distributed" ]; then
 fi
 
 echo "Building project..."
-mvn clean package -DskipTests
+mvn -f sustainability-flink/pom.xml clean package -DskipTests
 
 echo "Running NYTProfitableQuery in $EXECUTION_MODE mode..."
 echo "Overall Throughput: $THROUGHPUT, Per-node Throughput: $PER_NODE_THROUGHPUT"
 echo "Cache Size: $CACHE_SIZE, Duration: $DURATION s, Input File: $INPUT_FILE"
 
 # Find the built JAR file
-JAR_FILE=$(ls target/sustainability-flink-*.jar | head -n 1)
+JAR_FILE=$(ls sustainability-flink/target/sustainability-flink-*.jar | head -n 1)
 
 if [ -z "$JAR_FILE" ]; then
     echo "Error: Could not find the built JAR file in target/"
