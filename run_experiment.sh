@@ -29,8 +29,9 @@ if [ "$EXECUTION_MODE" = "distributed" ]; then
     PER_NODE_THROUGHPUT=$((THROUGHPUT / 2))
 fi
 
-echo "Building project..."
+echo "Building project and generating classpath..."
 mvn -f sustainability-flink/pom.xml clean package -DskipTests
+mvn -f sustainability-flink/pom.xml dependency:build-classpath -Dmdep.outputFile=classpath.txt
 
 echo "Running NYTProfitableQuery in $EXECUTION_MODE mode..."
 echo "Overall Throughput: $THROUGHPUT, Per-node Throughput: $PER_NODE_THROUGHPUT"
@@ -44,8 +45,16 @@ if [ -z "$JAR_FILE" ]; then
     exit 1
 fi
 
-# Submit the job to Flink (passing arguments to the Flink job)
-flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \
+CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
+
+# Run the job via java directly
+java \
+    --add-opens=java.base/java.lang=ALL-UNNAMED \
+    --add-opens=java.base/java.util=ALL-UNNAMED \
+    --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+    --add-opens=java.base/java.io=ALL-UNNAMED \
+    --add-opens=java.base/java.nio=ALL-UNNAMED \
+    -cp "$CLASSPATH" com.flink.sustainability.NYT.NYTProfitableQuery \
     --input-file "$INPUT_FILE" \
     --cache-size "$CACHE_SIZE" \
     --throughput "$PER_NODE_THROUGHPUT" \
