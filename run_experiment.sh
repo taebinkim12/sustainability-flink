@@ -7,7 +7,7 @@
 EXECUTION_MODE="single"
 CACHE_SIZE=100000
 THROUGHPUT=10000
-INPUT_FILE="~/NYT-data/2013_header_less_sorted.csv"
+INPUT_FILE="$HOME/NYT-data/2013_header_less_sorted.csv"
 DURATION=60
 
 # Parse command line arguments

@@ -29,8 +29,14 @@ public class NYTProfitableQuery {
 
         org.apache.flink.configuration.Configuration conf = new org.apache.flink.configuration.Configuration();
         conf.setString("taskmanager.memory.network.min", "256mb");
-        conf.setString("taskmanager.memory.network.max", "256mb");
+        conf.setString("taskmanager.memory.network.max", "1gb");
+        conf.setString("taskmanager.memory.network.fraction", "0.2");
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
+        
+        // Cap parallelism to prevent single JVM from spinning up 15,000+ threads on massive servers
+        if (env.getParallelism() > 128) {
+            env.setParallelism(128);
+        }
 
         // Incorporate the source operator with parsed arguments
         DataStream<NYTEventCondensed> events = env.addSource(new NYTSourceOperator(
