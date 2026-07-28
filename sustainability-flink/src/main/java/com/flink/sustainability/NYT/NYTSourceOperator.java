@@ -1,0 +1,90 @@
+package com.flink.sustainability.NYT;
+
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.util.ArrayList;
+import java.util.List;
+
+public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventCondensed> {
+    private String filePath;
+    private int cacheSize;
+    private int eventsPerSec;
+    private long durationSec;
+
+    private transient List<NYTEventCondensed> eventCache;
+    private volatile boolean isRunning = true;
+
+    public NYTSourceOperator(String filePath, int cacheSize, int eventsPerSec, long durationSec) {
+        this.filePath = filePath;
+        this.cacheSize = cacheSize;
+        this.eventsPerSec = eventsPerSec;
+        this.durationSec = durationSec;
+    }
+
+    @Override
+    public void open(Configuration parameters) throws Exception {
+        super.open(parameters);
+        eventCache = new ArrayList<>(cacheSize);
+        
+        int subtaskIdx = getRuntimeContext().getIndexOfThisSubtask();
+        int parallelism = getRuntimeContext().getNumberOfParallelSubtasks();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String line;
+            long lineIndex = 0;
+            long startLine = (long) cacheSize * subtaskIdx;
+            long endLine = (long) cacheSize * (subtaskIdx + 1);
+
+            while ((line = reader.readLine()) != null && eventCache.size() < cacheSize) {
+                // Partition reading by contiguous blocks for each instance
+                if (lineIndex >= startLine && lineIndex < endLine) {
+                    NYTEventCondensed event = NYTEventCondensed.parseLine(line);
+                    if (event != null) {
+                        eventCache.add(event);
+                    }
+                } else if (lineIndex >= endLine) {
+                    break; // Stop reading once we pass our designated block
+                }
+                lineIndex++;
+            }
+        }
+    }
+
+    @Override
+    public void run(SourceContext<NYTEventCondensed> ctx) throws Exception {
+        if (eventCache == null || eventCache.isEmpty()) {
+            return;
+        }
+
+        long startTime = System.currentTimeMillis();
+        long durationMs = durationSec * 1000L;
+        long count = 0;
+        int cacheIdx = 0;
+        int actualCacheSize = eventCache.size();
+
+        while (isRunning && (System.currentTimeMillis() - startTime < durationMs)) {
+            long currentTime = System.currentTimeMillis();
+            long elapsedMs = currentTime - startTime;
+            
+            // Expected number of events that should have been emitted by now
+            long expectedCount = (long) ((elapsedMs / 1000.0) * eventsPerSec);
+
+            if (count < expectedCount) {
+                ctx.collect(eventCache.get(cacheIdx));
+                cacheIdx = (cacheIdx + 1) % actualCacheSize;
+                count++;
+            } else {
+                // Yield to prevent 100% CPU busy-waiting
+                Thread.sleep(1);
+            }
+        }
+    }
+
+    @Override
+    public void cancel() {
+        isRunning = false;
+    }
+}
