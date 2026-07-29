@@ -26,6 +26,7 @@ public class NYTProfitableQuery {
         int cacheSize = parameters.getInt("cache-size", 100000);
         int throughput = parameters.getInt("throughput", 100000);
         long duration = parameters.getLong("duration", 180);
+        String throughputFilePrefix = parameters.get("throughput-file-prefix", "throughput_results");
 
         org.apache.flink.configuration.Configuration conf = new org.apache.flink.configuration.Configuration();
         // Network memory min and max MUST match exactly when running via MiniCluster
@@ -44,7 +45,8 @@ public class NYTProfitableQuery {
             inputFile, 
             cacheSize, 
             throughput, 
-            duration
+            duration,
+            throughputFilePrefix
         ));
 
         DataStream<NYTEventProjected> projectedEvents = events.map(e -> new NYTEventProjected(
