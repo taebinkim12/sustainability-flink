@@ -95,6 +95,15 @@ run_job() {
     echo "  Output Directory:    $SUB_DIR"
     echo "========================================================="
 
+    local CONFIG_FILE="${SUB_DIR}/config.txt"
+    {
+        echo "Execution Mode: $MODE"
+        echo "Input File: $IN_FILE"
+        echo "Duration: $DURATION"
+        echo "Cache Size: $CACHE_SIZE"
+        echo "Global Throughput: $TPUT"
+    } > "$CONFIG_FILE"
+
     if [ "$MODE" = "distributed" ]; then
         echo "Submitting job to Flink cluster..."
         flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \

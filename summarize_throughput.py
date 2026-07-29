@@ -29,4 +29,7 @@ for subdir in subdirs:
                         total_throughput += float(match.group(1))
     
     print(f"Run {subdir} - Total Processed Throughput: {total_throughput:.2f} events/sec")
+    
+    with open(os.path.join(full_subdir, "result.txt"), "w") as rf:
+        rf.write(f"Total Processed Throughput: {total_throughput:.2f} events/sec\n")
 print("=========================================================\n")
