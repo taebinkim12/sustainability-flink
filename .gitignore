@@ -2,3 +2,4 @@ sustainability-flink/target/
 sustainability-flink/classpath.txt
 sustainability-flink/*.log
 *.log
+result_*/
