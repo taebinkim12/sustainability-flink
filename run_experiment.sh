@@ -5,9 +5,9 @@
 
 # Default values
 EXECUTION_MODES=()
-CACHE_SIZE=100000
+CACHE_SIZES=()
 THROUGHPUTS=()
-INPUT_FILES=()
+INPUT_FILE="$HOME/NYT-data/2013_header_less_sorted.csv"
 DURATION=600
 
 # Parse command line arguments
@@ -21,7 +21,12 @@ while [[ "$#" -gt 0 ]]; do
             done
             ;;
         --cache-size)
-            CACHE_SIZE="$2"; shift 2;;
+            shift
+            while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
+                CACHE_SIZES+=("$1")
+                shift
+            done
+            ;;
         --throughput)
             shift
             while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
@@ -30,12 +35,7 @@ while [[ "$#" -gt 0 ]]; do
             done
             ;;
         --input-file)
-            shift
-            while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
-                INPUT_FILES+=("$1")
-                shift
-            done
-            ;;
+            INPUT_FILE="$2"; shift 2;;
         --duration)
             DURATION="$2"; shift 2;;
         *) 
@@ -49,8 +49,8 @@ fi
 if [ ${#THROUGHPUTS[@]} -eq 0 ]; then
     THROUGHPUTS=("0.01") # Default 10000 events/sec
 fi
-if [ ${#INPUT_FILES[@]} -eq 0 ]; then
-    INPUT_FILES=("$HOME/NYT-data/2013_header_less_sorted.csv")
+if [ ${#CACHE_SIZES[@]} -eq 0 ]; then
+    CACHE_SIZES=(100000)
 fi
 
 echo "Building project and generating classpath..."
@@ -74,6 +74,7 @@ run_job() {
     local MODE=$1
     local TPUT_MILLIONS=$2
     local IN_FILE=$3
+    local CACHE_SIZE=$4
 
     # Calculate true throughput by multiplying by 1,000,000
     local TPUT=$(awk "BEGIN {print int($TPUT_MILLIONS * 1000000)}")
@@ -120,10 +121,10 @@ run_job() {
     fi
 }
 
-for file in "${INPUT_FILES[@]}"; do
+for cache in "${CACHE_SIZES[@]}"; do
     for tput in "${THROUGHPUTS[@]}"; do
         for mode in "${EXECUTION_MODES[@]}"; do
-            run_job "$mode" "$tput" "$file"
+            run_job "$mode" "$tput" "$INPUT_FILE" "$cache"
             echo "Job finished. Sleeping 5 seconds before next run..."
             sleep 5
         done
