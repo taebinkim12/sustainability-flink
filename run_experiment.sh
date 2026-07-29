@@ -114,7 +114,7 @@ if [ -z "$JAR_FILE" ]; then
 fi
 
 # Create main directory for this batch of runs
-MAIN_DIR=$(date +%Y%m%d_%H%M)
+MAIN_DIR="$PWD/$(date +%Y%m%d_%H%M)"
 mkdir -p "$MAIN_DIR"
 echo "Created main experiment directory: $MAIN_DIR"
 
@@ -241,6 +241,17 @@ start_cluster() {
             sed -i.bak 's/^taskmanager.memory.network.max:.*/taskmanager.memory.network.max: 2gb/' "$CONF_FILE"
         else
             echo "taskmanager.memory.network.max: 2gb" >> "$CONF_FILE"
+        fi
+
+        local PARALLELISM=256
+        if [ "$exec_mode" = "single" ]; then
+            PARALLELISM=128
+        fi
+
+        if grep -q "^parallelism.default:" "$CONF_FILE"; then
+            sed -i.bak "s/^parallelism.default:.*/parallelism.default: $PARALLELISM/" "$CONF_FILE"
+        else
+            echo "parallelism.default: $PARALLELISM" >> "$CONF_FILE"
         fi
     fi
     if [ -f "${FLINK_DIR}/bin/start-cluster.sh" ]; then
