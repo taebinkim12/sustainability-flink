@@ -85,36 +85,47 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         int actualCacheSize = eventCache.size();
 
         long nanosPerEvent = localEventsPerSec > 0 ? 1_000_000_000L / localEventsPerSec : 0;
-        long nextEmissionTime = System.nanoTime();
+        final int BATCH_SIZE = 1000;
+        long batchStartTime = System.nanoTime();
 
-        while (isRunning && (System.currentTimeMillis() - startTime < durationMs)) {
-            long currentTime = System.currentTimeMillis();
-            
-            // Check if 1 second has elapsed since the last snapshot
-            if (currentTime - lastSnapshotTime >= 1000) {
-                long actualIntervalMs = currentTime - lastSnapshotTime;
-                long diff = totalEventsEmitted - lastSnapshotCount;
-                
-                // Calculate true events per second for this irregular window
-                double trueRate = (diff / (double) actualIntervalMs) * 1000.0;
-                throughputSamples.add(trueRate);
-                
-                lastSnapshotCount = totalEventsEmitted;
-                lastSnapshotTime = currentTime;
-            }
-            
-            if (nanosPerEvent > 0) {
-                long currentNano = System.nanoTime();
-                if (currentNano < nextEmissionTime) {
-                    java.util.concurrent.locks.LockSupport.parkNanos(nextEmissionTime - currentNano);
+        while (isRunning) {
+            // 1. Time-based checks and throughput snapshots every BATCH_SIZE events
+            if (totalEventsEmitted % BATCH_SIZE == 0) {
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - startTime >= durationMs) {
+                    break;
                 }
-                // Schedule the next event relative to NOW, preventing "banking" of missed events
-                nextEmissionTime = System.nanoTime() + nanosPerEvent;
+                
+                if (currentTime - lastSnapshotTime >= 1000) {
+                    long actualIntervalMs = currentTime - lastSnapshotTime;
+                    long diff = totalEventsEmitted - lastSnapshotCount;
+                    
+                    double trueRate = (diff / (double) actualIntervalMs) * 1000.0;
+                    throughputSamples.add(trueRate);
+                    
+                    lastSnapshotCount = totalEventsEmitted;
+                    lastSnapshotTime = currentTime;
+                }
             }
 
+            // 2. Emit event
             ctx.collect(eventCache.get(cacheIdx));
             cacheIdx = (cacheIdx + 1) % actualCacheSize;
             totalEventsEmitted++;
+
+            // 3. Rate limiting per batch
+            if (nanosPerEvent > 0 && totalEventsEmitted % BATCH_SIZE == 0) {
+                long batchDurationNanos = nanosPerEvent * BATCH_SIZE;
+                long currentNano = System.nanoTime();
+                long elapsedNanos = currentNano - batchStartTime;
+                long nanosToSleep = batchDurationNanos - elapsedNanos;
+                
+                if (nanosToSleep > 0) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(nanosToSleep);
+                }
+                // Reset batch start time to now to prevent banking
+                batchStartTime = System.nanoTime();
+            }
         }
     }
 
