@@ -21,7 +21,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
     private transient List<NYTEventCondensed> eventCache;
     private volatile boolean isRunning = true;
 
-    private transient List<Long> throughputSamples;
+    private transient List<Double> throughputSamples;
     private transient boolean throughputReported;
 
     public NYTSourceOperator(String filePath, int cacheSize, int eventsPerSec, long durationSec, String throughputFilePrefix) {
@@ -78,29 +78,37 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         int cacheIdx = 0;
         int actualCacheSize = eventCache.size();
 
+        long nanosPerEvent = eventsPerSec > 0 ? 1_000_000_000L / eventsPerSec : 0;
+        long nextEmissionTime = System.nanoTime();
+
         while (isRunning && (System.currentTimeMillis() - startTime < durationMs)) {
             long currentTime = System.currentTimeMillis();
-            long elapsedMs = currentTime - startTime;
             
             // Check if 1 second has elapsed since the last snapshot
             if (currentTime - lastSnapshotTime >= 1000) {
+                long actualIntervalMs = currentTime - lastSnapshotTime;
                 long diff = count - lastSnapshotCount;
-                throughputSamples.add(diff);
+                
+                // Calculate true events per second for this irregular window
+                double trueRate = (diff / (double) actualIntervalMs) * 1000.0;
+                throughputSamples.add(trueRate);
+                
                 lastSnapshotCount = count;
                 lastSnapshotTime = currentTime;
             }
             
-            // Expected number of events that should have been emitted by now
-            long expectedCount = (long) ((elapsedMs / 1000.0) * eventsPerSec);
-
-            if (count < expectedCount) {
-                ctx.collect(eventCache.get(cacheIdx));
-                cacheIdx = (cacheIdx + 1) % actualCacheSize;
-                count++;
-            } else {
-                // Yield to prevent 100% CPU busy-waiting
-                java.util.concurrent.locks.LockSupport.parkNanos(10000L);
+            if (nanosPerEvent > 0) {
+                long currentNano = System.nanoTime();
+                if (currentNano < nextEmissionTime) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(nextEmissionTime - currentNano);
+                }
+                // Schedule the next event relative to NOW, preventing "banking" of missed events
+                nextEmissionTime = System.nanoTime() + nanosPerEvent;
             }
+
+            ctx.collect(eventCache.get(cacheIdx));
+            cacheIdx = (cacheIdx + 1) % actualCacheSize;
+            count++;
         }
     }
 
@@ -121,7 +129,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         throughputReported = true;
 
         if (throughputSamples != null) {
-            long sum = 0;
+            double sum = 0;
             int count = 0;
 
             if (throughputSamples.size() >= 3) {
@@ -132,13 +140,13 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
                 }
             } else {
                 // Just average what we have
-                for (Long sample : throughputSamples) {
+                for (Double sample : throughputSamples) {
                     sum += sample;
                     count++;
                 }
             }
 
-            double averageThroughput = count > 0 ? (double) sum / count : 0.0;
+            double averageThroughput = count > 0 ? sum / count : 0.0;
 
             int subtaskIdx = getRuntimeContext().getIndexOfThisSubtask();
             String fileName = throughputFilePrefix + "_subtask_" + subtaskIdx + ".csv";
