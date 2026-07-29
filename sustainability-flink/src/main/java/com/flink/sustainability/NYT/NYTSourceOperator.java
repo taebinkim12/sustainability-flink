@@ -23,6 +23,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
 
     private transient List<Double> throughputSamples;
     private transient boolean throughputReported;
+    private transient long totalEventsEmitted;
 
     public NYTSourceOperator(String filePath, int cacheSize, int eventsPerSec, long durationSec, String throughputFilePrefix) {
         this.filePath = filePath;
@@ -72,7 +73,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
 
         long startTime = System.currentTimeMillis();
         long durationMs = durationSec * 1000L;
-        long count = 0;
+        totalEventsEmitted = 0;
         long lastSnapshotTime = startTime;
         long lastSnapshotCount = 0;
         int cacheIdx = 0;
@@ -87,13 +88,13 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
             // Check if 1 second has elapsed since the last snapshot
             if (currentTime - lastSnapshotTime >= 1000) {
                 long actualIntervalMs = currentTime - lastSnapshotTime;
-                long diff = count - lastSnapshotCount;
+                long diff = totalEventsEmitted - lastSnapshotCount;
                 
                 // Calculate true events per second for this irregular window
                 double trueRate = (diff / (double) actualIntervalMs) * 1000.0;
                 throughputSamples.add(trueRate);
                 
-                lastSnapshotCount = count;
+                lastSnapshotCount = totalEventsEmitted;
                 lastSnapshotTime = currentTime;
             }
             
@@ -108,7 +109,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
 
             ctx.collect(eventCache.get(cacheIdx));
             cacheIdx = (cacheIdx + 1) % actualCacheSize;
-            count++;
+            totalEventsEmitted++;
         }
     }
 
@@ -152,7 +153,14 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
             String fileName = throughputFilePrefix + "_subtask_" + subtaskIdx + ".csv";
 
             try (PrintWriter writer = new PrintWriter(new FileWriter(fileName, true))) {
+                writer.println("--- Subtask " + subtaskIdx + " Throughput Samples (events/sec) ---");
+                for (int i = 0; i < throughputSamples.size(); i++) {
+                    writer.println("Sample " + (i + 1) + ": " + throughputSamples.get(i));
+                }
+                writer.println("-----------------------------------------------------");
                 writer.println("Subtask " + subtaskIdx + " Steady-State Average Throughput (events/sec): " + averageThroughput);
+                writer.println("Subtask " + subtaskIdx + " Total Events Emitted: " + totalEventsEmitted);
+                
                 System.out.println("Subtask " + subtaskIdx + " Steady-State Average Throughput: " + averageThroughput);
             } catch (IOException e) {
                 e.printStackTrace();
