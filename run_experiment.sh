@@ -87,6 +87,13 @@ if [ ${#CACHE_SIZES[@]} -eq 0 ]; then
     CACHE_SIZES=(100000)
 fi
 
+if ! command -v flink &> /dev/null; then
+    if [ -d "$PWD/flink-1.18.0/bin" ]; then
+        echo "[INFO] Flink not found in PATH. Adding local flink-1.18.0 to PATH."
+        export PATH="$PWD/flink-1.18.0/bin:$PATH"
+    fi
+fi
+
 echo "Building project and generating classpath..."
 mvn -f sustainability-flink/pom.xml clean package -DskipTests
 mvn -f sustainability-flink/pom.xml dependency:build-classpath -Dmdep.outputFile=classpath.txt
@@ -206,14 +213,62 @@ run_job() {
     fi
 }
 
-for cache in "${CACHE_SIZES[@]}"; do
-    for tput in "${THROUGHPUTS[@]}"; do
-        for mode in "${EXECUTION_MODES[@]}"; do
+start_cluster() {
+    local exec_mode=$1
+    echo "[INFO] Configuring and starting Flink cluster for $exec_mode mode..."
+    local CONF_FILE="flink-1.18.0/conf/flink-conf.yaml"
+    if [ -f "$CONF_FILE" ]; then
+        if grep -q "^taskmanager.numberOfTaskSlots:" "$CONF_FILE"; then
+            sed -i.bak 's/^taskmanager.numberOfTaskSlots:.*/taskmanager.numberOfTaskSlots: 128/' "$CONF_FILE"
+        else
+            echo "taskmanager.numberOfTaskSlots: 128" >> "$CONF_FILE"
+        fi
+
+        if grep -q "^taskmanager.memory.process.size:" "$CONF_FILE"; then
+            sed -i.bak 's/^taskmanager.memory.process.size:.*/taskmanager.memory.process.size: 16384m/' "$CONF_FILE"
+        else
+            echo "taskmanager.memory.process.size: 16384m" >> "$CONF_FILE"
+        fi
+
+        if grep -q "^taskmanager.memory.network.max:" "$CONF_FILE"; then
+            sed -i.bak 's/^taskmanager.memory.network.max:.*/taskmanager.memory.network.max: 2gb/' "$CONF_FILE"
+        else
+            echo "taskmanager.memory.network.max: 2gb" >> "$CONF_FILE"
+        fi
+    fi
+    if [ -f "flink-1.18.0/bin/start-cluster.sh" ]; then
+        ./flink-1.18.0/bin/start-cluster.sh
+    fi
+}
+
+stop_cluster() {
+    echo "[INFO] Shutting down Flink cluster..."
+    if [ -f "flink-1.18.0/bin/stop-cluster.sh" ]; then
+        ./flink-1.18.0/bin/stop-cluster.sh
+    fi
+}
+
+for mode in "${EXECUTION_MODES[@]}"; do
+    NEEDS_CLUSTER=false
+    if [ "$LOCAL" = "false" ]; then
+        NEEDS_CLUSTER=true
+    fi
+
+    if [ "$NEEDS_CLUSTER" = "true" ]; then
+        start_cluster "$mode"
+    fi
+
+    for cache in "${CACHE_SIZES[@]}"; do
+        for tput in "${THROUGHPUTS[@]}"; do
             run_job "$mode" "$tput" "$INPUT_FILE" "$cache"
             echo "Job finished. Sleeping 5 seconds before next run..."
             sleep 5
         done
     done
+
+    if [ "$NEEDS_CLUSTER" = "true" ]; then
+        stop_cluster
+    fi
 done
 
 echo "All experiments completed!"
