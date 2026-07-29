@@ -91,7 +91,14 @@ if ! command -v flink &> /dev/null; then
     if [ -d "$PWD/flink-1.18.0/bin" ]; then
         echo "[INFO] Flink not found in PATH. Adding local flink-1.18.0 to PATH."
         export PATH="$PWD/flink-1.18.0/bin:$PATH"
+        FLINK_DIR="$PWD/flink-1.18.0"
+    else
+        echo "Error: flink command not found in PATH."
+        exit 1
     fi
+else
+    FLINK_BIN_PATH=$(command -v flink)
+    FLINK_DIR=$(dirname "$(dirname "$FLINK_BIN_PATH")")
 fi
 
 echo "Building project and generating classpath..."
@@ -216,7 +223,7 @@ run_job() {
 start_cluster() {
     local exec_mode=$1
     echo "[INFO] Configuring and starting Flink cluster for $exec_mode mode..."
-    local CONF_FILE="flink-1.18.0/conf/flink-conf.yaml"
+    local CONF_FILE="${FLINK_DIR}/conf/flink-conf.yaml"
     if [ -f "$CONF_FILE" ]; then
         if grep -q "^taskmanager.numberOfTaskSlots:" "$CONF_FILE"; then
             sed -i.bak 's/^taskmanager.numberOfTaskSlots:.*/taskmanager.numberOfTaskSlots: 128/' "$CONF_FILE"
@@ -236,15 +243,15 @@ start_cluster() {
             echo "taskmanager.memory.network.max: 2gb" >> "$CONF_FILE"
         fi
     fi
-    if [ -f "flink-1.18.0/bin/start-cluster.sh" ]; then
-        ./flink-1.18.0/bin/start-cluster.sh
+    if [ -f "${FLINK_DIR}/bin/start-cluster.sh" ]; then
+        "${FLINK_DIR}/bin/start-cluster.sh"
     fi
 }
 
 stop_cluster() {
     echo "[INFO] Shutting down Flink cluster..."
-    if [ -f "flink-1.18.0/bin/stop-cluster.sh" ]; then
-        ./flink-1.18.0/bin/stop-cluster.sh
+    if [ -f "${FLINK_DIR}/bin/stop-cluster.sh" ]; then
+        "${FLINK_DIR}/bin/stop-cluster.sh"
     fi
 }
 
