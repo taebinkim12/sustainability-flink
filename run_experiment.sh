@@ -113,20 +113,25 @@ run_job() {
             --duration "$DURATION" \
             --throughput-file-prefix "$PREFIX"
     else
-        echo "Running job locally via embedded MiniCluster..."
-        CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
-        java \
-            --add-opens=java.base/java.lang=ALL-UNNAMED \
-            --add-opens=java.base/java.util=ALL-UNNAMED \
-            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
-            --add-opens=java.base/java.io=ALL-UNNAMED \
-            --add-opens=java.base/java.nio=ALL-UNNAMED \
-            -cp "$CLASSPATH" com.flink.sustainability.NYT.NYTProfitableQuery \
+        echo "Starting powerstat in background for single-node execution..."
+        sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
+        
+        echo "Waiting 10 seconds to collect idle power usage before run..."
+        sleep 10
+
+        echo "Submitting job locally via Flink Standalone Cluster..."
+        flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \
             --input-file "$IN_FILE" \
             --cache-size "$CACHE_SIZE" \
             --throughput "$TPUT" \
             --duration "$DURATION" \
             --throughput-file-prefix "$PREFIX"
+            
+        echo "Waiting 10 seconds to collect idle power usage after run..."
+        sleep 10
+        
+        echo "Killing powerstat process..."
+        sudo pkill -INT -f powerstat
     fi
 }
 
