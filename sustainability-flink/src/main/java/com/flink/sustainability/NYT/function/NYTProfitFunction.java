@@ -1,4 +1,7 @@
-package com.flink.sustainability.NYT;
+package com.flink.sustainability.NYT.function;
+
+import com.flink.sustainability.NYT.types.*;
+
 
 import org.apache.commons.math3.stat.descriptive.rank.Median;
 import org.apache.flink.api.java.tuple.Tuple2;

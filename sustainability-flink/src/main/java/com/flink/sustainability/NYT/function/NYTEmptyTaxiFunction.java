@@ -1,4 +1,7 @@
-package com.flink.sustainability.NYT;
+package com.flink.sustainability.NYT.function;
+
+import com.flink.sustainability.NYT.types.*;
+
 
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;

@@ -1,4 +1,7 @@
-package com.flink.sustainability.NYT;
+package com.flink.sustainability.NYT.function;
+
+import com.flink.sustainability.NYT.types.*;
+
 
 import org.apache.flink.api.common.functions.FlatJoinFunction;
 import org.apache.flink.api.java.functions.KeySelector;

@@ -1,27 +1,30 @@
-package com.flink.sustainability.NYT;
+package com.flink.sustainability.NYT.types;
 
-public class NYTEmptyTaxiCountReport {
+import com.flink.sustainability.NYT.function.*;
+
+
+public class NYTProfitReport {
     public long windowEnd;
     public int cellIdWE;
     public int cellIdNS;
-    public int count;
+    public double profit;
 
-    public NYTEmptyTaxiCountReport() {}
+    public NYTProfitReport() {}
 
-    public NYTEmptyTaxiCountReport(long windowEnd, int cellIdWE, int cellIdNS, int count) {
+    public NYTProfitReport(long windowEnd, int cellIdWE, int cellIdNS, double profit) {
         this.windowEnd = windowEnd;
         this.cellIdWE = cellIdWE;
         this.cellIdNS = cellIdNS;
-        this.count = count;
+        this.profit = profit;
     }
 
     @Override
     public String toString() {
-        return "NYTEmptyTaxiCountReport{" +
+        return "NYTProfitReport{" +
                 "windowEnd=" + windowEnd +
                 ", cellIdWE=" + cellIdWE +
                 ", cellIdNS=" + cellIdNS +
-                ", count=" + count +
+                ", profit=" + profit +
                 '}';
     }
 }

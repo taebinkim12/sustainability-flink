@@ -1,4 +1,7 @@
-package com.flink.sustainability.NYT;
+package com.flink.sustainability.NYT.types;
+
+import com.flink.sustainability.NYT.function.*;
+
 
 public class NYTProfitabilityReport {
     public long windowEnd;

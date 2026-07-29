@@ -1,5 +1,9 @@
 package com.flink.sustainability.NYT;
 
+import com.flink.sustainability.NYT.types.*;
+import com.flink.sustainability.NYT.function.*;
+
+
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.utils.ParameterTool;
