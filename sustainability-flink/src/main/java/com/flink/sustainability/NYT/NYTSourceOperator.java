@@ -10,10 +10,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventCondensed> {
     private String filePath;
@@ -25,9 +21,6 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
     private transient List<NYTEventCondensed> eventCache;
     private volatile boolean isRunning = true;
 
-    private transient ScheduledExecutorService scheduler;
-    private transient AtomicLong emittedEvents;
-    private transient long lastEmittedCount;
     private transient List<Long> throughputSamples;
     private transient boolean throughputReported;
 
@@ -43,18 +36,8 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
     public void open(Configuration parameters) throws Exception {
         super.open(parameters);
         eventCache = new ArrayList<>(cacheSize);
-        emittedEvents = new AtomicLong(0);
-        lastEmittedCount = 0;
         throughputSamples = new ArrayList<>();
         throughputReported = false;
-
-        scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(() -> {
-            long currentCount = emittedEvents.get();
-            long diff = currentCount - lastEmittedCount;
-            lastEmittedCount = currentCount;
-            throughputSamples.add(diff);
-        }, 1, 1, TimeUnit.SECONDS);
         
         int subtaskIdx = getRuntimeContext().getIndexOfThisSubtask();
         int parallelism = getRuntimeContext().getNumberOfParallelSubtasks();
@@ -89,6 +72,9 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
 
         long startTime = System.currentTimeMillis();
         long durationMs = durationSec * 1000L;
+        long count = 0;
+        long lastSnapshotTime = startTime;
+        long lastSnapshotCount = 0;
         int cacheIdx = 0;
         int actualCacheSize = eventCache.size();
 
@@ -96,13 +82,21 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
             long currentTime = System.currentTimeMillis();
             long elapsedMs = currentTime - startTime;
             
+            // Check if 1 second has elapsed since the last snapshot
+            if (currentTime - lastSnapshotTime >= 1000) {
+                long diff = count - lastSnapshotCount;
+                throughputSamples.add(diff);
+                lastSnapshotCount = count;
+                lastSnapshotTime = currentTime;
+            }
+            
             // Expected number of events that should have been emitted by now
             long expectedCount = (long) ((elapsedMs / 1000.0) * eventsPerSec);
 
-            if (emittedEvents.get() < expectedCount) {
+            if (count < expectedCount) {
                 ctx.collect(eventCache.get(cacheIdx));
                 cacheIdx = (cacheIdx + 1) % actualCacheSize;
-                emittedEvents.incrementAndGet();
+                count++;
             } else {
                 // Yield to prevent 100% CPU busy-waiting
                 java.util.concurrent.locks.LockSupport.parkNanos(10000L);
@@ -125,10 +119,6 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
     private synchronized void reportThroughput() {
         if (throughputReported) return;
         throughputReported = true;
-
-        if (scheduler != null) {
-            scheduler.shutdownNow();
-        }
 
         if (throughputSamples != null) {
             long sum = 0;
