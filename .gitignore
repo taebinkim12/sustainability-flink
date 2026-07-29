@@ -5,3 +5,5 @@ sustainability-flink/*.log
 result_*/
 flink-*/
 *.tgz
+2026*/
+*.txt
