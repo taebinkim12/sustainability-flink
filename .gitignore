@@ -3,3 +3,5 @@ sustainability-flink/classpath.txt
 sustainability-flink/*.log
 *.log
 result_*/
+flink-*/
+*.tgz
