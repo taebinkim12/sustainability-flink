@@ -9,10 +9,16 @@ CACHE_SIZES=()
 THROUGHPUTS=()
 INPUT_FILE="$HOME/NYT-data/2013_header_less_sorted.csv"
 DURATION=600
+QUERY="profitable"
+LOCAL=""
 
 # Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
+        --query)
+            QUERY="$2"; shift 2;;
+        --local)
+            LOCAL="$2"; shift 2;;
         --execution-mode)
             shift
             while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
@@ -43,9 +49,37 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
+if [ "$QUERY" != "profitable" ] && [ "$QUERY" != "distance" ]; then
+    echo "Error: Unknown query option '$QUERY'. Valid options are: profitable, distance"
+    exit 1
+fi
+
+if [ -n "$LOCAL" ] && [ "$LOCAL" != "true" ] && [ "$LOCAL" != "false" ]; then
+    echo "Error: Unknown --local option '$LOCAL'. Valid options are: true, false"
+    exit 1
+fi
+
 if [ ${#EXECUTION_MODES[@]} -eq 0 ]; then
     EXECUTION_MODES=("single")
 fi
+
+if [ -z "$LOCAL" ]; then
+    LOCAL="true"
+    for mode in "${EXECUTION_MODES[@]}"; do
+        if [ "$mode" = "distributed" ]; then
+            LOCAL="false"
+            break
+        fi
+    done
+fi
+
+for mode in "${EXECUTION_MODES[@]}"; do
+    if [ "$mode" = "distributed" ] && [ "$LOCAL" = "true" ]; then
+        echo "Error: Cannot run in distributed execution mode when --local is set to true. Stopping experiment."
+        exit 1
+    fi
+done
+
 if [ ${#THROUGHPUTS[@]} -eq 0 ]; then
     THROUGHPUTS=("0.01") # Default 10000 events/sec
 fi
@@ -84,9 +118,16 @@ run_job() {
     mkdir -p "$SUB_DIR"
     local PREFIX="${SUB_DIR}/throughput_results"
 
+    # Select main class name based on query
+    local CLASS_NAME="com.flink.sustainability.NYT.NYTProfitableQuery"
+    if [ "$QUERY" = "distance" ]; then
+        CLASS_NAME="com.flink.sustainability.NYT.NYTDistanceQuery"
+    fi
+
     echo ""
     echo "========================================================="
     echo "RUN CONFIGURATION:"
+    echo "  Query:               $QUERY"
     echo "  Execution Mode:      $MODE"
     echo "  Input File:          $IN_FILE"
     echo "  Duration:            $DURATION seconds"
@@ -97,6 +138,7 @@ run_job() {
 
     local CONFIG_FILE="${SUB_DIR}/config.txt"
     {
+        echo "Query: $QUERY"
         echo "Execution Mode: $MODE"
         echo "Input File: $IN_FILE"
         echo "Duration: $DURATION"
@@ -104,14 +146,36 @@ run_job() {
         echo "Global Throughput: $TPUT"
     } > "$CONFIG_FILE"
 
-    if [ "$MODE" = "distributed" ]; then
-        echo "Submitting job to Flink cluster..."
-        flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \
-            --input-file "$IN_FILE" \
-            --cache-size "$CACHE_SIZE" \
-            --throughput "$TPUT" \
-            --duration "$DURATION" \
-            --throughput-file-prefix "$PREFIX"
+    if [ "$LOCAL" = "false" ]; then
+        if [ "$MODE" = "distributed" ]; then
+            echo "Submitting job to Flink cluster..."
+            flink run -c "$CLASS_NAME" "$JAR_FILE" \
+                --input-file "$IN_FILE" \
+                --cache-size "$CACHE_SIZE" \
+                --throughput "$TPUT" \
+                --duration "$DURATION" \
+                --throughput-file-prefix "$PREFIX"
+        else
+            echo "Starting powerstat in background for single-node execution..."
+            sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
+            
+            echo "Waiting 10 seconds to collect idle power usage before run..."
+            sleep 10
+
+            echo "Submitting job locally via Flink Standalone Cluster..."
+            flink run -c "$CLASS_NAME" "$JAR_FILE" \
+                --input-file "$IN_FILE" \
+                --cache-size "$CACHE_SIZE" \
+                --throughput "$TPUT" \
+                --duration "$DURATION" \
+                --throughput-file-prefix "$PREFIX"
+
+            echo "Waiting 10 seconds to collect idle power usage after run..."
+            sleep 10
+            
+            echo "Killing powerstat process..."
+            sudo pkill -INT -f powerstat
+        fi
     else
         echo "Starting powerstat in background for single-node execution..."
         sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
@@ -119,8 +183,15 @@ run_job() {
         echo "Waiting 10 seconds to collect idle power usage before run..."
         sleep 10
 
-        echo "Submitting job locally via Flink Standalone Cluster..."
-        flink run -c com.flink.sustainability.NYT.NYTProfitableQuery "$JAR_FILE" \
+        echo "Running job locally via embedded MiniCluster..."
+        CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
+        java \
+            --add-opens=java.base/java.lang=ALL-UNNAMED \
+            --add-opens=java.base/java.util=ALL-UNNAMED \
+            --add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+            --add-opens=java.base/java.io=ALL-UNNAMED \
+            --add-opens=java.base/java.nio=ALL-UNNAMED \
+            -cp "$CLASSPATH" "$CLASS_NAME" \
             --input-file "$IN_FILE" \
             --cache-size "$CACHE_SIZE" \
             --throughput "$TPUT" \
