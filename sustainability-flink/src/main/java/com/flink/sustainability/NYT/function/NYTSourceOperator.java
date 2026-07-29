@@ -18,6 +18,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
     private String filePath;
     private int cacheSize;
     private int eventsPerSec;
+    private int localEventsPerSec;
     private long durationSec;
     private String throughputFilePrefix;
 
@@ -45,6 +46,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         
         int subtaskIdx = getRuntimeContext().getIndexOfThisSubtask();
         int parallelism = getRuntimeContext().getNumberOfParallelSubtasks();
+        this.localEventsPerSec = this.eventsPerSec / parallelism;
 
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
@@ -82,7 +84,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         int cacheIdx = 0;
         int actualCacheSize = eventCache.size();
 
-        long nanosPerEvent = eventsPerSec > 0 ? 1_000_000_000L / eventsPerSec : 0;
+        long nanosPerEvent = localEventsPerSec > 0 ? 1_000_000_000L / localEventsPerSec : 0;
         long nextEmissionTime = System.nanoTime();
 
         while (isRunning && (System.currentTimeMillis() - startTime < durationMs)) {

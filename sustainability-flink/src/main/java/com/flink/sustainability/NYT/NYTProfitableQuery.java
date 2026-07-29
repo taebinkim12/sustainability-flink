@@ -11,7 +11,7 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
+import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 
@@ -103,7 +103,7 @@ public class NYTProfitableQuery {
             .apply(new NYTProfitJoiner());
 
         // Output results
-        profitability.addSink(new PrintSinkFunction<>());
+        profitability.addSink(new DiscardingSink<>());
 
         // Execute program, beginning computation.
         env.execute("NYT Profitable Query Job");
