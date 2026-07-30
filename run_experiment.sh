@@ -113,6 +113,31 @@ else
     FLINK_DIR=$(dirname "$(dirname "$FLINK_BIN_PATH")")
 fi
 
+force_kill_flink() {
+    echo "[INFO] Force killing any existing Flink cluster processes..."
+    if [ -f "${FLINK_DIR}/bin/stop-cluster.sh" ]; then
+        "${FLINK_DIR}/bin/stop-cluster.sh" >/dev/null 2>&1
+    fi
+    pkill -9 -f "org.apache.flink.runtime.entrypoint.StandaloneSessionClusterEntrypoint" >/dev/null 2>&1
+    pkill -9 -f "org.apache.flink.runtime.taskexecutor.TaskManagerRunner" >/dev/null 2>&1
+    rm -f /tmp/flink-*.pid >/dev/null 2>&1
+
+    local WORKERS_FILE="${FLINK_DIR}/conf/workers"
+    if [ -f "$WORKERS_FILE" ]; then
+        while read -r worker || [ -n "$worker" ]; do
+            if [[ -z "$worker" || "$worker" =~ ^# ]]; then
+                continue
+            fi
+            echo "[INFO] Force killing Flink on remote worker: $worker"
+            ssh -o ConnectTimeout=5 "$worker" "pkill -9 -f 'org.apache.flink.runtime.entrypoint.StandaloneSessionClusterEntrypoint' >/dev/null 2>&1; pkill -9 -f 'org.apache.flink.runtime.taskexecutor.TaskManagerRunner' >/dev/null 2>&1; rm -f /tmp/flink-*.pid >/dev/null 2>&1" >/dev/null 2>&1 &
+        done < "$WORKERS_FILE"
+        wait
+    fi
+}
+
+# Kill any Flink cluster before we start the whole experiment
+force_kill_flink
+
 echo "Building project and generating classpath..."
 mvn -f sustainability-flink/pom.xml clean package -DskipTests
 mvn -f sustainability-flink/pom.xml dependency:build-classpath -Dmdep.outputFile=classpath.txt
@@ -158,6 +183,7 @@ run_job() {
     echo "  Input File:          $IN_FILE"
     echo "  Duration:            $DURATION seconds"
     echo "  Cache Size:          $CACHE_SIZE"
+    echo "  Number of Queries:   $NUM_QUERIES"
     echo "  Global Throughput:   $TPUT ($TPUT_MILLIONS M events/sec)"
     echo "  Output Directory:    $SUB_DIR"
     echo "========================================================="
@@ -169,6 +195,7 @@ run_job() {
         echo "Input File: $IN_FILE"
         echo "Duration: $DURATION"
         echo "Cache Size: $CACHE_SIZE"
+        echo "Number of Queries: $NUM_QUERIES"
         echo "Global Throughput: $TPUT"
     } > "$CONFIG_FILE"
 
@@ -281,9 +308,7 @@ start_cluster() {
 
 stop_cluster() {
     echo "[INFO] Shutting down Flink cluster..."
-    if [ -f "${FLINK_DIR}/bin/stop-cluster.sh" ]; then
-        "${FLINK_DIR}/bin/stop-cluster.sh"
-    fi
+    force_kill_flink
 }
 
 for mode in "${EXECUTION_MODES[@]}"; do
@@ -294,23 +319,25 @@ for mode in "${EXECUTION_MODES[@]}"; do
 
     for num_q in "${NUM_QUERIES_LIST[@]}"; do
         NUM_QUERIES=$num_q
-        echo "[INFO] Running experiment with $NUM_QUERIES query instances..."
-
-        if [ "$NEEDS_CLUSTER" = "true" ]; then
-            start_cluster "$mode"
-        fi
 
         for cache in "${CACHE_SIZES[@]}"; do
             for tput in "${THROUGHPUTS[@]}"; do
+                if [ "$NEEDS_CLUSTER" = "true" ]; then
+                    start_cluster "$mode"
+                    # Wait 5 seconds for TaskManagers to fully boot up and register with JobManager
+                    sleep 5
+                fi
+
                 run_job "$mode" "$tput" "$INPUT_FILE" "$cache"
-                echo "Job finished. Sleeping 5 seconds before next run..."
+                echo "Job finished. Sleeping 5 seconds before cluster shutdown..."
                 sleep 5
+
+                if [ "$NEEDS_CLUSTER" = "true" ]; then
+                    stop_cluster
+                    sleep 2
+                fi
             done
         done
-
-        if [ "$NEEDS_CLUSTER" = "true" ]; then
-            stop_cluster
-        fi
     done
 done
 
