@@ -30,42 +30,48 @@ public class NYTDistanceQuery {
         conf.setString("taskmanager.memory.network.max", "2gb");
         conf.setString("taskmanager.memory.network.fraction", "0.2");
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
-        
-        // Disable operator chaining for per-operator metric collection
-        env.disableOperatorChaining();
+        int numQueries = parameters.getInt("num-queries", 1);
+        int throughputPerQuery = throughput;
 
-        // Incorporate the source operator with parsed arguments
-        DataStream<NYTDQEvent> events = env.addSource(new NYTDQSourceOperator(
-            inputFile, 
-            cacheSize, 
-            throughput, 
-            duration,
-            throughputFilePrefix
-        ));
+        for (int i = 0; i < numQueries; i++) {
+            String querySsg = "query_group_" + i;
+            String queryPrefix = throughputFilePrefix + "_q" + i;
 
-        // Assign timestamps based on system clock (ingestion time)
-        DataStream<NYTDQEvent> rides = events.assignTimestampsAndWatermarks(
-            WatermarkStrategy.<NYTDQEvent>forMonotonousTimestamps()
-                .withTimestampAssigner((event, timestamp) -> System.currentTimeMillis())
-        );
+            // Incorporate the source operator with parsed arguments
+            DataStream<NYTDQEvent> events = env.addSource(new NYTDQSourceOperator(
+                inputFile, 
+                cacheSize, 
+                throughputPerQuery, 
+                duration,
+                queryPrefix
+            )).slotSharingGroup(querySsg).setParallelism(1);
 
-        // Filter: dropoffCell > 0 && pickupCell > 0 && vendorId is "VTS" && tripDistance > 1
-        DataStream<NYTDQEvent> filteredRides = rides.filter(event -> 
-            event.dropoffCell > 0 && 
-            event.pickupCell > 0 && 
-            event.vendorId != null && 
-            event.vendorId.equals("VTS") && 
-            event.tripDistance > 1
-        );
+            // Assign timestamps based on system clock (ingestion time)
+            DataStream<NYTDQEvent> rides = events.assignTimestampsAndWatermarks(
+                WatermarkStrategy.<NYTDQEvent>forMonotonousTimestamps()
+                    .withTimestampAssigner((event, timestamp) -> System.currentTimeMillis())
+            ).slotSharingGroup(querySsg).setParallelism(1);
 
-        // Window & Average Distance aggregation
-        DataStream<NYTDistanceReport> distanceReports = filteredRides
-            .keyBy(value -> value.pickupCell)
-            .timeWindow(Time.seconds(WINDOW_DURATION_SECONDS))
-            .apply(new NYTDistanceWindowFunction());
+            // Filter: dropoffCell > 0 && pickupCell > 0 && vendorId is "VTS" && tripDistance > 1
+            DataStream<NYTDQEvent> filteredRides = rides.filter(event -> 
+                event.dropoffCell > 0 && 
+                event.pickupCell > 0 && 
+                event.vendorId != null && 
+                event.vendorId.equals("VTS") && 
+                event.tripDistance > 1
+            ).slotSharingGroup(querySsg).setParallelism(1);
 
-        // Output results
-        distanceReports.addSink(new DiscardingSink<>());
+            // Window & Average Distance aggregation
+            DataStream<NYTDistanceReport> distanceReports = filteredRides
+                .keyBy(value -> value.pickupCell)
+                .timeWindow(Time.seconds(WINDOW_DURATION_SECONDS))
+                .apply(new NYTDistanceWindowFunction())
+                .slotSharingGroup(querySsg).setParallelism(1);
+
+            // Output results
+            distanceReports.addSink(new DiscardingSink<>())
+                .slotSharingGroup(querySsg).setParallelism(1);
+        }
 
         // Execute program, beginning computation.
         env.execute("NYT Distance Query Job");

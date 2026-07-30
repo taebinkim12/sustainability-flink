@@ -11,6 +11,7 @@ INPUT_FILE="$HOME/NYT-data/2013_header_less_sorted.csv"
 DURATION=600
 QUERY="profitable"
 LOCAL=""
+NUM_QUERIES=4
 
 # Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -40,6 +41,8 @@ while [[ "$#" -gt 0 ]]; do
                 shift
             done
             ;;
+        --num-queries)
+            NUM_QUERIES="$2"; shift 2;;
         --input-file)
             INPUT_FILE="$2"; shift 2;;
         --duration)
@@ -168,7 +171,8 @@ run_job() {
                 --cache-size "$CACHE_SIZE" \
                 --throughput "$TPUT" \
                 --duration "$DURATION" \
-                --throughput-file-prefix "$PREFIX"
+                --throughput-file-prefix "$PREFIX" \
+                --num-queries "$NUM_QUERIES"
         else
             echo "Starting powerstat in background for single-node execution..."
             sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
@@ -182,7 +186,8 @@ run_job() {
                 --cache-size "$CACHE_SIZE" \
                 --throughput "$TPUT" \
                 --duration "$DURATION" \
-                --throughput-file-prefix "$PREFIX"
+                --throughput-file-prefix "$PREFIX" \
+                --num-queries "$NUM_QUERIES"
 
             echo "Waiting 10 seconds to collect idle power usage after run..."
             sleep 10
@@ -210,7 +215,8 @@ run_job() {
             --cache-size "$CACHE_SIZE" \
             --throughput "$TPUT" \
             --duration "$DURATION" \
-            --throughput-file-prefix "$PREFIX"
+            --throughput-file-prefix "$PREFIX" \
+            --num-queries "$NUM_QUERIES"
             
         echo "Waiting 10 seconds to collect idle power usage after run..."
         sleep 10
@@ -225,10 +231,18 @@ start_cluster() {
     echo "[INFO] Configuring and starting Flink cluster for $exec_mode mode..."
     local CONF_FILE="${FLINK_DIR}/conf/flink-conf.yaml"
     if [ -f "$CONF_FILE" ]; then
+        local SLOTS=$NUM_QUERIES
+        if [ "$exec_mode" = "distributed" ]; then
+            SLOTS=$((NUM_QUERIES / 2))
+            if [ "$SLOTS" -lt 1 ]; then
+                SLOTS=1
+            fi
+        fi
+
         if grep -q "^taskmanager.numberOfTaskSlots:" "$CONF_FILE"; then
-            sed -i.bak 's/^taskmanager.numberOfTaskSlots:.*/taskmanager.numberOfTaskSlots: 128/' "$CONF_FILE"
+            sed -i.bak "s/^taskmanager.numberOfTaskSlots:.*/taskmanager.numberOfTaskSlots: $SLOTS/" "$CONF_FILE"
         else
-            echo "taskmanager.numberOfTaskSlots: 128" >> "$CONF_FILE"
+            echo "taskmanager.numberOfTaskSlots: $SLOTS" >> "$CONF_FILE"
         fi
 
         if grep -q "^taskmanager.memory.process.size:" "$CONF_FILE"; then
@@ -243,10 +257,7 @@ start_cluster() {
             echo "taskmanager.memory.network.max: 2gb" >> "$CONF_FILE"
         fi
 
-        local PARALLELISM=256
-        if [ "$exec_mode" = "single" ]; then
-            PARALLELISM=128
-        fi
+        local PARALLELISM=$NUM_QUERIES
 
         if grep -q "^parallelism.default:" "$CONF_FILE"; then
             sed -i.bak "s/^parallelism.default:.*/parallelism.default: $PARALLELISM/" "$CONF_FILE"
