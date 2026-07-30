@@ -11,7 +11,7 @@ INPUT_FILE="$HOME/NYT-data/2013_header_less_sorted.csv"
 DURATION=600
 QUERY="profitable"
 LOCAL=""
-NUM_QUERIES=4
+NUM_QUERIES_LIST=()
 
 # Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -42,7 +42,12 @@ while [[ "$#" -gt 0 ]]; do
             done
             ;;
         --num-queries)
-            NUM_QUERIES="$2"; shift 2;;
+            shift
+            while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
+                NUM_QUERIES_LIST+=("$1")
+                shift
+            done
+            ;;
         --input-file)
             INPUT_FILE="$2"; shift 2;;
         --duration)
@@ -64,6 +69,10 @@ fi
 
 if [ ${#EXECUTION_MODES[@]} -eq 0 ]; then
     EXECUTION_MODES=("single")
+fi
+
+if [ ${#NUM_QUERIES_LIST[@]} -eq 0 ]; then
+    NUM_QUERIES_LIST=(4)
 fi
 
 if [ -z "$LOCAL" ]; then
@@ -283,21 +292,26 @@ for mode in "${EXECUTION_MODES[@]}"; do
         NEEDS_CLUSTER=true
     fi
 
-    if [ "$NEEDS_CLUSTER" = "true" ]; then
-        start_cluster "$mode"
-    fi
+    for num_q in "${NUM_QUERIES_LIST[@]}"; do
+        NUM_QUERIES=$num_q
+        echo "[INFO] Running experiment with $NUM_QUERIES query instances..."
 
-    for cache in "${CACHE_SIZES[@]}"; do
-        for tput in "${THROUGHPUTS[@]}"; do
-            run_job "$mode" "$tput" "$INPUT_FILE" "$cache"
-            echo "Job finished. Sleeping 5 seconds before next run..."
-            sleep 5
+        if [ "$NEEDS_CLUSTER" = "true" ]; then
+            start_cluster "$mode"
+        fi
+
+        for cache in "${CACHE_SIZES[@]}"; do
+            for tput in "${THROUGHPUTS[@]}"; do
+                run_job "$mode" "$tput" "$INPUT_FILE" "$cache"
+                echo "Job finished. Sleeping 5 seconds before next run..."
+                sleep 5
+            done
         done
-    done
 
-    if [ "$NEEDS_CLUSTER" = "true" ]; then
-        stop_cluster
-    fi
+        if [ "$NEEDS_CLUSTER" = "true" ]; then
+            stop_cluster
+        fi
+    done
 done
 
 echo "All experiments completed!"
