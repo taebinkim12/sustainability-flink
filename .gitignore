@@ -7,3 +7,4 @@ flink-*/
 *.tgz
 2026*/
 *.txt
+data/
