@@ -304,6 +304,26 @@ start_cluster() {
     local exec_mode=$1
     echo "[INFO] Configuring and starting Flink cluster for $exec_mode mode..."
     local CONF_FILE="${FLINK_DIR}/conf/flink-conf.yaml"
+    local WORKERS_FILE="${FLINK_DIR}/conf/workers"
+
+    # Dynamically configure workers file to isolate execution environments
+    if [ -f "$WORKERS_FILE" ]; then
+        if [ ! -f "${WORKERS_FILE}.bak" ]; then
+            cp "$WORKERS_FILE" "${WORKERS_FILE}.bak"
+        fi
+
+        if [ "$exec_mode" = "single" ]; then
+            echo "[INFO] Configuring workers file for single node (localhost only)..."
+            echo "localhost" > "$WORKERS_FILE"
+        else
+            echo "[INFO] Configuring workers file for distributed mode (localhost and remote hosts)..."
+            echo "localhost" > "$WORKERS_FILE"
+            for rhost in "${REMOTE_HOSTS[@]}"; do
+                echo "$rhost" >> "$WORKERS_FILE"
+            done
+        fi
+    fi
+
     if [ -f "$CONF_FILE" ]; then
         local SLOTS=$NUM_QUERIES
         if [ "$exec_mode" = "distributed" ]; then
@@ -380,6 +400,11 @@ for mode in "${EXECUTION_MODES[@]}"; do
 done
 
 echo "All experiments completed!"
+
+# Restore workers file if backup exists
+if [ -f "${FLINK_DIR}/conf/workers.bak" ]; then
+    mv "${FLINK_DIR}/conf/workers.bak" "${FLINK_DIR}/conf/workers"
+fi
 
 # Summarize throughput
 python3 summarize_throughput.py "$MAIN_DIR"
