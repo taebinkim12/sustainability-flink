@@ -12,6 +12,7 @@ DURATION=600
 QUERY="profitable"
 LOCAL=""
 NUM_QUERIES_LIST=()
+REMOTE_HOSTS=()
 
 # Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -45,6 +46,13 @@ while [[ "$#" -gt 0 ]]; do
             shift
             while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
                 NUM_QUERIES_LIST+=("$1")
+                shift
+            done
+            ;;
+        --remote-hosts)
+            shift
+            while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
+                REMOTE_HOSTS+=("$1")
                 shift
             done
             ;;
@@ -155,6 +163,50 @@ MAIN_DIR="$PWD/$(date +%Y%m%d_%H%M)"
 mkdir -p "$MAIN_DIR"
 echo "Created main experiment directory: $MAIN_DIR"
 
+start_powerstat() {
+    local SUB_DIR=$1
+    local MODE=$2
+
+    echo "[INFO] Starting powerstat on local host ($(hostname))..."
+    sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output_$(hostname).txt" 2>&1 &
+    LOCAL_POWERSTAT_PID=$!
+
+    if [ "$MODE" = "distributed" ] && [ ${#REMOTE_HOSTS[@]} -gt 0 ]; then
+        REMOTE_PIDS=()
+        for host in "${REMOTE_HOSTS[@]}"; do
+            echo "[INFO] Starting powerstat on remote host: $host"
+            local rpid
+            rpid=$(ssh -o ConnectTimeout=5 "$host" "sudo nohup powerstat -tfcRD 1 27000 > '${SUB_DIR}/powerstat_output_${host}.txt' 2>&1 & echo \\\$!")
+            rpid=$(echo "$rpid" | tr -d '\r\n[:space:]')
+            echo "[INFO] Remote powerstat PID on $host is $rpid"
+            REMOTE_PIDS+=("$host:$rpid")
+        done
+    fi
+}
+
+stop_powerstat() {
+    local MODE=$1
+    echo "[INFO] Killing local powerstat process..."
+    if [ -n "$LOCAL_POWERSTAT_PID" ]; then
+        sudo kill -INT "$LOCAL_POWERSTAT_PID" >/dev/null 2>&1
+        wait "$LOCAL_POWERSTAT_PID" 2>/dev/null
+    else
+        sudo pkill -INT -f powerstat >/dev/null 2>&1
+    fi
+
+    if [ "$MODE" = "distributed" ] && [ ${#REMOTE_PIDS[@]} -gt 0 ]; then
+        for entry in "${REMOTE_PIDS[@]}"; do
+            local host=${entry%%:*}
+            local rpid=${entry##*:}
+            if [ -n "$rpid" ]; then
+                echo "[INFO] Killing remote powerstat process on $host (PID: $rpid)..."
+                ssh -o ConnectTimeout=5 "$host" "sudo kill -INT $rpid" >/dev/null 2>&1
+            fi
+        done
+        unset REMOTE_PIDS
+    fi
+}
+
 run_job() {
     local MODE=$1
     local TPUT_MILLIONS=$2
@@ -199,6 +251,11 @@ run_job() {
         echo "Global Throughput: $TPUT"
     } > "$CONFIG_FILE"
 
+    start_powerstat "$SUB_DIR" "$MODE"
+
+    echo "Waiting 10 seconds to collect idle power usage before run..."
+    sleep 10
+
     if [ "$LOCAL" = "false" ]; then
         if [ "$MODE" = "distributed" ]; then
             echo "Submitting job to Flink cluster..."
@@ -210,12 +267,6 @@ run_job() {
                 --throughput-file-prefix "$PREFIX" \
                 --num-queries "$NUM_QUERIES"
         else
-            echo "Starting powerstat in background for single-node execution..."
-            sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
-            
-            echo "Waiting 10 seconds to collect idle power usage before run..."
-            sleep 10
-
             echo "Submitting job locally via Flink Standalone Cluster..."
             flink run -c "$CLASS_NAME" "$JAR_FILE" \
                 --input-file "$IN_FILE" \
@@ -224,20 +275,8 @@ run_job() {
                 --duration "$DURATION" \
                 --throughput-file-prefix "$PREFIX" \
                 --num-queries "$NUM_QUERIES"
-
-            echo "Waiting 10 seconds to collect idle power usage after run..."
-            sleep 10
-            
-            echo "Killing powerstat process..."
-            sudo pkill -INT -f powerstat
         fi
     else
-        echo "Starting powerstat in background for single-node execution..."
-        sudo powerstat -tfcRD 1 27000 > "${SUB_DIR}/powerstat_output.txt" 2>&1 &
-        
-        echo "Waiting 10 seconds to collect idle power usage before run..."
-        sleep 10
-
         echo "Running job locally via embedded MiniCluster..."
         CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
         java \
@@ -253,13 +292,12 @@ run_job() {
             --duration "$DURATION" \
             --throughput-file-prefix "$PREFIX" \
             --num-queries "$NUM_QUERIES"
-            
-        echo "Waiting 10 seconds to collect idle power usage after run..."
-        sleep 10
-        
-        echo "Killing powerstat process..."
-        sudo pkill -INT -f powerstat
     fi
+
+    echo "Waiting 10 seconds to collect idle power usage after run..."
+    sleep 10
+
+    stop_powerstat "$MODE"
 }
 
 start_cluster() {
