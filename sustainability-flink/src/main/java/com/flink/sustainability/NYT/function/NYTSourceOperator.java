@@ -77,6 +77,9 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
         }
 
         long startTime = System.currentTimeMillis();
+        int subtaskIdx = getRuntimeContext().getIndexOfThisSubtask();
+        appendTimestampToConfig(startTime, "Started", subtaskIdx);
+
         long durationMs = durationSec * 1000L;
         totalEventsEmitted = 0;
         long lastSnapshotTime = startTime;
@@ -93,7 +96,7 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
             if (totalEventsEmitted % BATCH_SIZE == 0) {
                 long currentTime = System.currentTimeMillis();
                 if (currentTime - startTime >= durationMs) {
-                    break;
+                     break;
                 }
                 
                 if (currentTime - lastSnapshotTime >= 1000) {
@@ -127,6 +130,8 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
                 batchStartTime = System.nanoTime();
             }
         }
+        long endTime = System.currentTimeMillis();
+        appendTimestampToConfig(endTime, "Ended", subtaskIdx);
     }
 
     @Override
@@ -181,6 +186,27 @@ public class NYTSourceOperator extends RichParallelSourceFunction<NYTEventConden
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    private void appendTimestampToConfig(long timestamp, String action, int subtaskIdx) {
+        if (throughputFilePrefix == null) return;
+        try {
+            java.io.File prefixFile = new java.io.File(throughputFilePrefix);
+            java.io.File parentDir = prefixFile.getParentFile();
+            if (parentDir != null && parentDir.exists()) {
+                java.io.File configFile = new java.io.File(parentDir, "config.txt");
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+                String timeStr = sdf.format(new java.util.Date(timestamp));
+                String name = prefixFile.getName();
+                synchronized (NYTSourceOperator.class) {
+                    try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.FileWriter(configFile, true))) {
+                        writer.println(name + "_subtask_" + subtaskIdx + " Processing " + action + ": " + timeStr + " (" + timestamp + ")");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error writing timestamp to config: " + e.getMessage());
         }
     }
 }
