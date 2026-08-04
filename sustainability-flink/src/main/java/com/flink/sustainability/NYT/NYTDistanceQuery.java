@@ -6,6 +6,7 @@ import com.flink.sustainability.NYT.function.*;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -31,6 +32,7 @@ public class NYTDistanceQuery {
         conf.setString("taskmanager.memory.network.fraction", "0.2");
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(conf);
         int numQueries = parameters.getInt("num-queries", 1);
+        boolean isolateQueries = parameters.getBoolean("isolate-queries", true);
         int throughputPerQuery = throughput;
 
         for (int i = 0; i < numQueries; i++) {
@@ -38,39 +40,52 @@ public class NYTDistanceQuery {
             String queryPrefix = throughputFilePrefix + "_q" + i;
 
             // Incorporate the source operator with parsed arguments
-            DataStream<NYTDQEvent> events = env.addSource(new NYTDQSourceOperator(
+            SingleOutputStreamOperator<NYTDQEvent> events = env.addSource(new NYTDQSourceOperator(
                 inputFile, 
                 cacheSize, 
                 throughputPerQuery, 
                 duration,
                 queryPrefix
-            )).slotSharingGroup(querySsg).setParallelism(1);
+            ));
+            if (isolateQueries) {
+                events = events.slotSharingGroup(querySsg).setParallelism(1);
+            }
 
             // Assign timestamps based on system clock (ingestion time)
-            DataStream<NYTDQEvent> rides = events.assignTimestampsAndWatermarks(
+            SingleOutputStreamOperator<NYTDQEvent> rides = events.assignTimestampsAndWatermarks(
                 WatermarkStrategy.<NYTDQEvent>forMonotonousTimestamps()
                     .withTimestampAssigner((event, timestamp) -> System.currentTimeMillis())
-            ).slotSharingGroup(querySsg).setParallelism(1);
+            );
+            if (isolateQueries) {
+                rides = rides.slotSharingGroup(querySsg).setParallelism(1);
+            }
 
             // Filter: dropoffCell > 0 && pickupCell > 0 && vendorId is "VTS" && tripDistance > 1
-            DataStream<NYTDQEvent> filteredRides = rides.filter(event -> 
+            SingleOutputStreamOperator<NYTDQEvent> filteredRides = rides.filter(event -> 
                 event.dropoffCell > 0 && 
                 event.pickupCell > 0 && 
                 event.vendorId != null && 
                 event.vendorId.equals("VTS") && 
                 event.tripDistance > 1
-            ).slotSharingGroup(querySsg).setParallelism(1);
+            );
+            if (isolateQueries) {
+                filteredRides = filteredRides.slotSharingGroup(querySsg).setParallelism(1);
+            }
 
             // Window & Average Distance aggregation
-            DataStream<NYTDistanceReport> distanceReports = filteredRides
+            SingleOutputStreamOperator<NYTDistanceReport> distanceReports = filteredRides
                 .keyBy(value -> value.pickupCell)
                 .timeWindow(Time.seconds(WINDOW_DURATION_SECONDS))
-                .apply(new NYTDistanceWindowFunction())
-                .slotSharingGroup(querySsg).setParallelism(1);
+                .apply(new NYTDistanceWindowFunction());
+            if (isolateQueries) {
+                distanceReports = distanceReports.slotSharingGroup(querySsg).setParallelism(1);
+            }
 
             // Output results
-            distanceReports.addSink(new DiscardingSink<>())
-                .slotSharingGroup(querySsg).setParallelism(1);
+            var sink = distanceReports.addSink(new DiscardingSink<>());
+            if (isolateQueries) {
+                sink.slotSharingGroup(querySsg).setParallelism(1);
+            }
         }
 
         // Execute program, beginning computation.

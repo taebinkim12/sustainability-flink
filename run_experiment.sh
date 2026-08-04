@@ -13,6 +13,11 @@ QUERY="profitable"
 LOCAL=""
 NUM_QUERIES_LIST=()
 REMOTE_HOSTS=()
+ISOLATE_QUERIES="true"
+TM_SLOTS=""
+TM_MEMORY="16384m"
+MANAGED_MEMORY=""
+DEFAULT_PARALLELISM=""
 
 # Parse command line arguments
 while [[ "$#" -gt 0 ]]; do
@@ -21,6 +26,16 @@ while [[ "$#" -gt 0 ]]; do
             QUERY="$2"; shift 2;;
         --local)
             LOCAL="$2"; shift 2;;
+        --isolate-queries)
+            ISOLATE_QUERIES="$2"; shift 2;;
+        --taskmanager-slots)
+            TM_SLOTS="$2"; shift 2;;
+        --taskmanager-memory)
+            TM_MEMORY="$2"; shift 2;;
+        --managed-memory-size)
+            MANAGED_MEMORY="$2"; shift 2;;
+        --default-parallelism)
+            DEFAULT_PARALLELISM="$2"; shift 2;;
         --execution-mode)
             shift
             while [[ "$#" -gt 0 && ! "$1" == --* ]]; do
@@ -265,7 +280,8 @@ run_job() {
                 --throughput "$TPUT" \
                 --duration "$DURATION" \
                 --throughput-file-prefix "$PREFIX" \
-                --num-queries "$NUM_QUERIES"
+                --num-queries "$NUM_QUERIES" \
+                --isolate-queries "$ISOLATE_QUERIES"
         else
             echo "Submitting job locally via Flink Standalone Cluster..."
             flink run -c "$CLASS_NAME" "$JAR_FILE" \
@@ -274,7 +290,8 @@ run_job() {
                 --throughput "$TPUT" \
                 --duration "$DURATION" \
                 --throughput-file-prefix "$PREFIX" \
-                --num-queries "$NUM_QUERIES"
+                --num-queries "$NUM_QUERIES" \
+                --isolate-queries "$ISOLATE_QUERIES"
         fi
     else
         echo "Running job locally via embedded MiniCluster..."
@@ -291,7 +308,8 @@ run_job() {
             --throughput "$TPUT" \
             --duration "$DURATION" \
             --throughput-file-prefix "$PREFIX" \
-            --num-queries "$NUM_QUERIES"
+            --num-queries "$NUM_QUERIES" \
+            --isolate-queries "$ISOLATE_QUERIES"
     fi
 
     echo "Waiting 10 seconds to collect idle power usage after run..."
@@ -326,10 +344,14 @@ start_cluster() {
 
     if [ -f "$CONF_FILE" ]; then
         local SLOTS=$NUM_QUERIES
-        if [ "$exec_mode" = "distributed" ]; then
-            SLOTS=$((NUM_QUERIES / 2))
-            if [ "$SLOTS" -lt 1 ]; then
-                SLOTS=1
+        if [ -n "$TM_SLOTS" ]; then
+            SLOTS=$TM_SLOTS
+        else
+            if [ "$exec_mode" = "distributed" ]; then
+                SLOTS=$((NUM_QUERIES / 2))
+                if [ "$SLOTS" -lt 1 ]; then
+                    SLOTS=1
+                fi
             fi
         fi
 
@@ -339,10 +361,23 @@ start_cluster() {
             echo "taskmanager.numberOfTaskSlots: $SLOTS" >> "$CONF_FILE"
         fi
 
+        local MEM_SIZE="16384m"
+        if [ -n "$TM_MEMORY" ]; then
+            MEM_SIZE=$TM_MEMORY
+        fi
+
         if grep -q "^taskmanager.memory.process.size:" "$CONF_FILE"; then
-            sed -i.bak 's/^taskmanager.memory.process.size:.*/taskmanager.memory.process.size: 16384m/' "$CONF_FILE"
+            sed -i.bak "s/^taskmanager.memory.process.size:.*/taskmanager.memory.process.size: $MEM_SIZE/" "$CONF_FILE"
         else
-            echo "taskmanager.memory.process.size: 16384m" >> "$CONF_FILE"
+            echo "taskmanager.memory.process.size: $MEM_SIZE" >> "$CONF_FILE"
+        fi
+
+        if [ -n "$MANAGED_MEMORY" ]; then
+            if grep -q "^taskmanager.memory.managed.size:" "$CONF_FILE"; then
+                sed -i.bak "s/^taskmanager.memory.managed.size:.*/taskmanager.memory.managed.size: $MANAGED_MEMORY/" "$CONF_FILE"
+            else
+                echo "taskmanager.memory.managed.size: $MANAGED_MEMORY" >> "$CONF_FILE"
+            fi
         fi
 
         if grep -q "^taskmanager.memory.network.max:" "$CONF_FILE"; then
@@ -352,6 +387,9 @@ start_cluster() {
         fi
 
         local PARALLELISM=$NUM_QUERIES
+        if [ -n "$DEFAULT_PARALLELISM" ]; then
+            PARALLELISM=$DEFAULT_PARALLELISM
+        fi
 
         if grep -q "^parallelism.default:" "$CONF_FILE"; then
             sed -i.bak "s/^parallelism.default:.*/parallelism.default: $PARALLELISM/" "$CONF_FILE"
