@@ -1,8 +1,5 @@
 package com.flink.sustainability.NYT.types;
 
-import com.flink.sustainability.NYT.function.*;
-
-
 public class NYTProfitReport {
     public long windowEnd;
     public int cellIdWE;

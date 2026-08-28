@@ -1,10 +1,10 @@
 package com.flink.sustainability.NYT.types;
 
-import com.flink.sustainability.NYT.function.*;
+import com.flink.sustainability.NYT.function.AreaMapper;
 
 public class NYTDQEvent {
     private static final int NO_FIELDS = 18;
-    
+
     public String vendorId;
     public int pickupCell;
     public int dropoffCell;
@@ -37,7 +37,7 @@ public class NYTDQEvent {
             event.pickupCell = pickupCell;
             event.dropoffCell = dropoffCell;
             event.tripDistance = tripDistance;
-            
+
             return event;
 
         } catch (AreaMapper.OutOfGridException | NumberFormatException e) {

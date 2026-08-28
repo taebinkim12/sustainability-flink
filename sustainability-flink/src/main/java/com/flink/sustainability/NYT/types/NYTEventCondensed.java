@@ -1,7 +1,6 @@
 package com.flink.sustainability.NYT.types;
 
-import com.flink.sustainability.NYT.function.*;
-
+import com.flink.sustainability.NYT.function.AreaMapper;
 
 import java.text.DateFormat;
 import java.text.ParseException;
@@ -52,12 +51,12 @@ public class NYTEventCondensed {
 
             NYTEventCondensed event = new NYTEventCondensed();
             event.medallion = tokens[0];
-            
+
             synchronized (dateFmt) {
                 event.pickupDatetime = dateFmt.parse(tokens[2]);
                 event.dropOffDatetime = dateFmt.parse(tokens[3]);
             }
-            
+
             event.pickupCellWE = pickupCellWE;
             event.pickupCellNS = pickupCellNS;
             event.dropOffCellWE = dropOffCellWE;

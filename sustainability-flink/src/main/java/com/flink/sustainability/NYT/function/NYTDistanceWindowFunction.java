@@ -1,6 +1,7 @@
 package com.flink.sustainability.NYT.function;
 
-import com.flink.sustainability.NYT.types.*;
+import com.flink.sustainability.NYT.types.NYTDQEvent;
+import com.flink.sustainability.NYT.types.NYTDistanceReport;
 
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
@@ -21,7 +22,7 @@ public class NYTDistanceWindowFunction implements
             Collector<NYTDistanceReport> out) throws Exception {
         long count = 0;
         double totalDistance = 0.0;
-        
+
         for (NYTDQEvent event : values) {
             count++;
             totalDistance += event.tripDistance;

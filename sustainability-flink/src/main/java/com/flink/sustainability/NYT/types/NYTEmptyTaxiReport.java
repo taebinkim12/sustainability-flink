@@ -1,8 +1,5 @@
 package com.flink.sustainability.NYT.types;
 
-import com.flink.sustainability.NYT.function.*;
-
-
 public class NYTEmptyTaxiReport {
     public long windowEnd;
     public String medallion;

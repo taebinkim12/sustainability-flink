@@ -1,8 +1,5 @@
 package com.flink.sustainability.NYT.function;
 
-import com.flink.sustainability.NYT.types.*;
-
-
 public class AreaMapper {
     public static final double EARTH_RADIUS = 6371; // km
     public static final double GRID_WIDTH = 150; // km

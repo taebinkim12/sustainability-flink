@@ -113,6 +113,10 @@ for mode in "${EXECUTION_MODES[@]}"; do
         echo "Error: Cannot run in distributed execution mode when --local is set to true. Stopping experiment."
         exit 1
     fi
+    if [ "$mode" = "distributed" ] && [ ${#REMOTE_HOSTS[@]} -eq 0 ]; then
+        echo "Error: Distributed execution mode requires specifying remote worker hosts via --remote-hosts. Stopping experiment."
+        exit 1
+    fi
 done
 
 if [ ${#THROUGHPUTS[@]} -eq 0 ]; then
@@ -272,27 +276,15 @@ run_job() {
     sleep 10
 
     if [ "$LOCAL" = "false" ]; then
-        if [ "$MODE" = "distributed" ]; then
-            echo "Submitting job to Flink cluster..."
-            flink run -c "$CLASS_NAME" "$JAR_FILE" \
-                --input-file "$IN_FILE" \
-                --cache-size "$CACHE_SIZE" \
-                --throughput "$TPUT" \
-                --duration "$DURATION" \
-                --throughput-file-prefix "$PREFIX" \
-                --num-queries "$NUM_QUERIES" \
-                --isolate-queries "$ISOLATE_QUERIES"
-        else
-            echo "Submitting job locally via Flink Standalone Cluster..."
-            flink run -c "$CLASS_NAME" "$JAR_FILE" \
-                --input-file "$IN_FILE" \
-                --cache-size "$CACHE_SIZE" \
-                --throughput "$TPUT" \
-                --duration "$DURATION" \
-                --throughput-file-prefix "$PREFIX" \
-                --num-queries "$NUM_QUERIES" \
-                --isolate-queries "$ISOLATE_QUERIES"
-        fi
+        echo "Submitting job to Flink cluster ($MODE mode)..."
+        flink run -c "$CLASS_NAME" "$JAR_FILE" \
+            --input-file "$IN_FILE" \
+            --cache-size "$CACHE_SIZE" \
+            --throughput "$TPUT" \
+            --duration "$DURATION" \
+            --throughput-file-prefix "$PREFIX" \
+            --num-queries "$NUM_QUERIES" \
+            --isolate-queries "$ISOLATE_QUERIES"
     else
         echo "Running job locally via embedded MiniCluster..."
         CLASSPATH="$JAR_FILE:$(cat sustainability-flink/classpath.txt)"
@@ -346,6 +338,8 @@ start_cluster() {
         local SLOTS=$NUM_QUERIES
         if [ -n "$TM_SLOTS" ]; then
             SLOTS=$TM_SLOTS
+        elif [ "$ISOLATE_QUERIES" = "false" ]; then
+            SLOTS=12  # Automatically use physical CPU core limit (12 slots per TaskManager)
         else
             if [ "$exec_mode" = "distributed" ]; then
                 SLOTS=$((NUM_QUERIES / 2))
@@ -372,11 +366,18 @@ start_cluster() {
             echo "taskmanager.memory.process.size: $MEM_SIZE" >> "$CONF_FILE"
         fi
 
+        local MANAGED_MEM=""
         if [ -n "$MANAGED_MEMORY" ]; then
+            MANAGED_MEM=$MANAGED_MEMORY
+        elif [ "$ISOLATE_QUERIES" = "false" ]; then
+            MANAGED_MEM="0"  # Set to 0 to allocate all TM memory to heap for cache/state
+        fi
+
+        if [ -n "$MANAGED_MEM" ]; then
             if grep -q "^taskmanager.memory.managed.size:" "$CONF_FILE"; then
-                sed -i.bak "s/^taskmanager.memory.managed.size:.*/taskmanager.memory.managed.size: $MANAGED_MEMORY/" "$CONF_FILE"
+                sed -i.bak "s/^taskmanager.memory.managed.size:.*/taskmanager.memory.managed.size: $MANAGED_MEM/" "$CONF_FILE"
             else
-                echo "taskmanager.memory.managed.size: $MANAGED_MEMORY" >> "$CONF_FILE"
+                echo "taskmanager.memory.managed.size: $MANAGED_MEM" >> "$CONF_FILE"
             fi
         fi
 
@@ -389,6 +390,12 @@ start_cluster() {
         local PARALLELISM=$NUM_QUERIES
         if [ -n "$DEFAULT_PARALLELISM" ]; then
             PARALLELISM=$DEFAULT_PARALLELISM
+        elif [ "$ISOLATE_QUERIES" = "false" ]; then
+            if [ "$exec_mode" = "distributed" ]; then
+                PARALLELISM=24  # Fill all slots across both nodes (12 * 2)
+            else
+                PARALLELISM=12  # Fill all slots on local node (12 * 1)
+            fi
         fi
 
         if grep -q "^parallelism.default:" "$CONF_FILE"; then

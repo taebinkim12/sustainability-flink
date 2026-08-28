@@ -1,16 +1,14 @@
 package com.flink.sustainability.NYT.function;
 
-import com.flink.sustainability.NYT.types.*;
-
+import com.flink.sustainability.NYT.types.NYTEventProjected;
+import com.flink.sustainability.NYT.types.NYTProfitReport;
 
 import org.apache.commons.math3.stat.descriptive.rank.Median;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class NYTProfitFunction implements
@@ -39,8 +37,6 @@ public class NYTProfitFunction implements
         for (int i = 0; i < gains.length; i++) {
             gains[i] = faretip.get(i);
         }
-
-        Arrays.sort(gains);
 
         double res = (new Median()).evaluate(gains);
 

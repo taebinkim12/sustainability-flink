@@ -1,11 +1,11 @@
 package com.flink.sustainability.NYT.function;
 
-import com.flink.sustainability.NYT.types.*;
-
+import com.flink.sustainability.NYT.types.NYTEmptyTaxiCountReport;
+import com.flink.sustainability.NYT.types.NYTProfitReport;
+import com.flink.sustainability.NYT.types.NYTProfitabilityReport;
 
 import org.apache.flink.api.common.functions.FlatJoinFunction;
 import org.apache.flink.api.java.functions.KeySelector;
-import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.util.Collector;
 
 public class NYTProfitJoiner implements

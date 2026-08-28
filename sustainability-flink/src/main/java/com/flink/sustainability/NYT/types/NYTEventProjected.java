@@ -1,7 +1,6 @@
 package com.flink.sustainability.NYT.types;
 
-import com.flink.sustainability.NYT.function.*;
-
+import com.flink.sustainability.NYT.function.AreaMapper;
 
 public class NYTEventProjected {
     public String medallion;
@@ -14,7 +13,7 @@ public class NYTEventProjected {
 
     public NYTEventProjected() {}
 
-    public NYTEventProjected(String medallion, int pickupCellWE, int pickupCellNS, 
+    public NYTEventProjected(String medallion, int pickupCellWE, int pickupCellNS,
                              int dropOffCellWE, int dropOffCellNS, double fareAmount, double tipAmount) {
         this.medallion = medallion;
         this.pickupCellWE = pickupCellWE;
