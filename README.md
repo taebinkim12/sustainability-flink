@@ -204,8 +204,3 @@ To re-run metric summarization across an experiment batch directory:
 python3 summarize_throughput.py <experiment_batch_dir>
 ```
 
----
-
-## Further Documentation
-
-For deep technical insights into Flink execution semantics, rate limiting mechanics, power measurement synchronization, and memory tuning, refer to [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md).
